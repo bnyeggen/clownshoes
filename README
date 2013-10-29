@@ -1,0 +1,9 @@
+Some document databases are ENTERPRISE GRADE HIGH PERFORMANCE NOSQL SCALABLE BIG
+DATA DATABASES.  That is not clownshoes, which is just mmap over a linkedlist of
+byte arrays, with in-memory indexing, and no journaling (I may add
+journaling later if I use this for something where I care about the data - until
+then, don't crash plz).
+
+This would be faster in C, since we could just type-pun the struct-byte conversion,
+but I'm using this as the local backing store for a Go-based webapp.  Cgo is a
+possibility.
