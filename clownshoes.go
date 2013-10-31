@@ -1,6 +1,6 @@
 package clownshoes
 
-// This is NOT finished yet, just a rough draft
+//This has NOT been tested yet.
 
 import (
 	"os"
@@ -183,7 +183,6 @@ func (db *DocumentBundle) ForEachDocumentReadOnly(proc func(uint64, Document)) {
 
 // This version does not do its own locking, so we can support callers who already
 // have the lock.
-// TODO: Calculate indexes for inserted documents
 func (db *DocumentBundle) doPutDocument(doc Document) uint64 {
 
 	lastDocOffset := db.GetLastDocOffset()
@@ -216,6 +215,13 @@ func (db *DocumentBundle) doPutDocument(doc Document) uint64 {
 	db.setLastDocOffset(insertPoint)
 	//The now 2nd-to-last doc's pointer to the next doc
 	db.setNextDocOffset(lastDocOffset, insertPoint)
+
+	//Update indexes
+	for _, idx := range db.indexes {
+		key := idx.keyFn(doc.Payload)
+		idx.lookup[key] = append(idx.lookup[key], insertPoint)
+	}
+
 	return insertPoint
 }
 
@@ -230,7 +236,6 @@ func (db *DocumentBundle) PutDocument(doc Document) uint64 {
 
 // This version does not do its own locking, so we can support callers who already
 // have the lock.
-// TODO: Remove document from index
 func (db *DocumentBundle) doRemoveDocumentAt(offset uint64) {
 	targ := db.GetDocumentAt(offset)
 	prevDocOffset := targ.PrevDocOffset
@@ -244,6 +249,19 @@ func (db *DocumentBundle) doRemoveDocumentAt(offset uint64) {
 	}
 	if db.GetLastDocOffset() == offset {
 		db.setLastDocOffset(prevDocOffset)
+	}
+
+	//Update indexes
+	for _, idx := range db.indexes {
+		key := idx.keyFn(targ.Payload)
+		arr := idx.lookup[key]
+		for i := 0; i < len(arr); i++ {
+			if arr[i] == key {
+				arr[i] = arr[len(arr)-1]
+				idx.lookup[key] = arr[:len(arr)-1]
+				break
+			}
+		}
 	}
 }
 
@@ -270,30 +288,52 @@ func (db *DocumentBundle) ReplaceDocument(offset uint64, newDoc Document) uint64
 	return 0
 }
 
-//Basically we just shift each of the existing docs to the head.
+// Concatenate all documents, adjust pointers, and truncate the file
 func (db *DocumentBundle) Compact() {
 	db.Lock()
 	defer db.Unlock()
 
+	//Clear indexes
+	for _, idx := range db.indexes {
+		idx.lookup = make(map[interface{}][]uint64, len(idx.lookup))
+	}
+
 	firstDocPos := db.GetFirstDocOffset()
 	firstDoc := db.GetDocumentAt(firstDocPos)
 	nextDocPos := firstDoc.NextDocOffset
+
 	//Handle moving initial document to head if necessary
 	if firstDocPos != 16 {
 		copy(db.AsBytes[16:], firstDoc.toBytes())
 		db.setFirstDocOffset(16)
 		db.setPrevDocOffset(nextDocPos, 16)
+
+		//Update index
+		for _, idx := range db.indexes {
+			key := idx.keyFn(firstDoc.Payload)
+			idx.lookup[key] = append(idx.lookup[key], 16)
+		}
+		//Necessary to set last-doc pointer if we have only one doc
+		firstDocPos = 16
 	}
 
 	for nextDocPos != 0 {
 		nextDoc := db.GetDocumentAt(nextDocPos)
 		insertPoint := firstDocPos + uint64(firstDoc.Size)
 
+		//Move nextDoc to end of firstDoc, point nextDoc and firstDoc at each other
 		copy(db.AsBytes[insertPoint:], nextDoc.toBytes())
 		db.setNextDocOffset(firstDocPos, insertPoint)
 		db.setPrevDocOffset(insertPoint, nextDocPos)
 
-		firstDocPos = nextDocPos
+		//Update index
+		for _, idx := range db.indexes {
+			key := idx.keyFn(nextDoc.Payload)
+			idx.lookup[key] = append(idx.lookup[key], insertPoint)
+		}
+
+		//Move up cursor
+		firstDocPos = insertPoint
 		nextDocPos = nextDoc.NextDocOffset
 		firstDoc = nextDoc
 	}
@@ -311,9 +351,9 @@ func (db *DocumentBundle) Compact() {
 }
 
 // Creates an index on the DB, with the given name, and the given function of the
-// document's payload for determining the key.  Right now indexes are not updated
-// on insert or removal of documents, and exist transiently in memory, necessitating
-// re-creation on each restart.  See README for notes on future plans for indexing.
+// document's payload for determining the key.  Right now indexes exist
+// transiently in memory, necessitating re-creation on each restart.  See README
+// for notes on future plans for indexing.
 func (db *DocumentBundle) AddIndex(indexName string, keyFn func([]byte) interface{}) {
 	//Prevents concurrent modifications to the indexes
 	db.Lock()
