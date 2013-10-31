@@ -22,10 +22,24 @@ type index struct {
 }
 
 type DocumentBundle struct {
-	AsBytes []byte           //Entire mmap'd array.  Includes first & last doc offsets
-	FileLoc string           //Location of file we're mmaping
-	Lock    sync.RWMutex     //We support per-database write locks as of version 0, aren't we fancy
-	indexes map[string]index //For exact-match indexing
+	sync.RWMutex                  //We support per-database write locks as of version 0, aren't we fancy
+	AsBytes      []byte           //Entire mmap'd array.  Includes first & last doc offsets
+	FileLoc      string           //Location of file we're mmaping
+	indexes      map[string]index //For exact-match indexing
+}
+
+// Copies the data, overwriting if necessary, to a file at destination.  Calling
+// this periodically is the only way to ensure you have a consistent version of
+// your data.
+func (db *DocumentBundle) CopyDB(destination string) error {
+	db.Lock()
+	db.Unlock()
+	newFile, err := os.Create(destination)
+	if err != nil {
+		return err
+	}
+	newFile.Write(db.AsBytes)
+	return newFile.Close()
 }
 
 // Return the offset of the first valid document in the DB, or 0 if there is none
@@ -100,7 +114,7 @@ func NewDB(location string) *DocumentBundle {
 		fileOut.Truncate(1000000000)
 	}
 	bytesOut, _ := syscall.Mmap(int(fileOut.Fd()), 0, int(stats.Size()), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
-	return &DocumentBundle{bytesOut, location, sync.RWMutex{}, make(map[string]index, 0)}
+	return &DocumentBundle{sync.RWMutex{}, bytesOut, location, make(map[string]index, 0)}
 }
 
 // This version does not do its own locking, so we can support callers who already
@@ -128,15 +142,15 @@ func (db *DocumentBundle) doGetDocumentAt(offset uint64) Document {
 
 // Returns the document at the given address.  Assumes the address is valid.
 func (db *DocumentBundle) GetDocumentAt(offset uint64) Document {
-	db.Lock.RLock()
-	defer db.Lock.RUnlock()
+	db.RLock()
+	defer db.RUnlock()
 	return db.doGetDocumentAt(offset)
 }
 
 // Using the index with the given name, lookup the documents with the given key.
 func (db *DocumentBundle) GetDocumentsWithIndex(indexName string, lookupKey interface{}) []Document {
-	db.Lock.RLock()
-	defer db.Lock.RUnlock()
+	db.RLock()
+	defer db.RUnlock()
 	idx, found := db.indexes[indexName]
 	if found {
 		offsets := idx.lookup[lookupKey]
@@ -154,8 +168,8 @@ func (db *DocumentBundle) GetDocumentsWithIndex(indexName string, lookupKey inte
 // We may support different contracts wrt locking and concurrent execution or
 // modifications later.
 func (db *DocumentBundle) ForEachDocumentReadOnly(proc func(uint64, Document)) {
-	db.Lock.RLock()
-	defer db.Lock.RUnlock()
+	db.RLock()
+	defer db.RUnlock()
 	pos := db.GetFirstDocOffset()
 	for {
 		if pos == 0 {
@@ -208,8 +222,8 @@ func (db *DocumentBundle) doPutDocument(doc Document) uint64 {
 // Right now this always inserts at the end, but if we ever have a use pattern w/
 // lots of removals / growing edits, we could do a malloc-tracking type thing
 func (db *DocumentBundle) PutDocument(doc Document) uint64 {
-	db.Lock.Lock()
-	defer db.Lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 	return db.doPutDocument(doc)
 }
 
@@ -234,16 +248,16 @@ func (db *DocumentBundle) doRemoveDocumentAt(offset uint64) {
 // Adjust the pointers to bypass the given document - does not zero the storage,
 // but a compaction will result in it being overwritten.
 func (db *DocumentBundle) RemoveDocumentAt(offset uint64) {
-	db.Lock.Lock()
-	defer db.Lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 	db.doRemoveDocumentAt(offset)
 }
 
 // Attempt to update the given document inplace - if it cannot be done, remove the
 // existing document and insert the new one at the end
 func (db *DocumentBundle) ReplaceDocument(offset uint64, newDoc Document) uint64 {
-	db.Lock.Lock()
-	defer db.Lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 	curDoc := db.GetDocumentAt(offset)
 	if curDoc.NextDocOffset > newDoc.byteSize()+offset {
 		copy(db.AsBytes[offset:], newDoc.toBytes())
@@ -256,8 +270,8 @@ func (db *DocumentBundle) ReplaceDocument(offset uint64, newDoc Document) uint64
 
 //Basically we just shift each of the existing docs to the head.
 func (db *DocumentBundle) Compact() {
-	db.Lock.Lock()
-	defer db.Lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 
 	firstDocPos := db.GetFirstDocOffset()
 	firstDoc := db.GetDocumentAt(firstDocPos)
@@ -296,8 +310,8 @@ func (db *DocumentBundle) Compact() {
 
 func (db *DocumentBundle) AddIndex(indexName string, keyFn func([]byte) interface{}) {
 	//Prevents concurrent modifications to the indexes
-	db.Lock.Lock()
-	defer db.Lock.Unlock()
+	db.Lock()
+	defer db.Unlock()
 	idx := index{keyFn, make(map[interface{}][]uint64)}
 	db.indexes[indexName] = idx
 	//Now calculate values by iterating thru maps
