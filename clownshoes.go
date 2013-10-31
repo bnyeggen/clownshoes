@@ -183,6 +183,7 @@ func (db *DocumentBundle) ForEachDocumentReadOnly(proc func(uint64, Document)) {
 
 // This version does not do its own locking, so we can support callers who already
 // have the lock.
+// TODO: Calculate indexes for inserted documents
 func (db *DocumentBundle) doPutDocument(doc Document) uint64 {
 
 	lastDocOffset := db.GetLastDocOffset()
@@ -218,7 +219,7 @@ func (db *DocumentBundle) doPutDocument(doc Document) uint64 {
 	return insertPoint
 }
 
-// Insert the given (new) document and return the index at which it was inserted
+// Insert the given (new) document and return the index at which it was inserted.
 // Right now this always inserts at the end, but if we ever have a use pattern w/
 // lots of removals / growing edits, we could do a malloc-tracking type thing
 func (db *DocumentBundle) PutDocument(doc Document) uint64 {
@@ -229,6 +230,7 @@ func (db *DocumentBundle) PutDocument(doc Document) uint64 {
 
 // This version does not do its own locking, so we can support callers who already
 // have the lock.
+// TODO: Remove document from index
 func (db *DocumentBundle) doRemoveDocumentAt(offset uint64) {
 	targ := db.GetDocumentAt(offset)
 	prevDocOffset := targ.PrevDocOffset
@@ -308,6 +310,10 @@ func (db *DocumentBundle) Compact() {
 	db.AsBytes = newArr
 }
 
+// Creates an index on the DB, with the given name, and the given function of the
+// document's payload for determining the key.  Right now indexes are not updated
+// on insert or removal of documents, and exist transiently in memory, necessitating
+// re-creation on each restart.  See README for notes on future plans for indexing.
 func (db *DocumentBundle) AddIndex(indexName string, keyFn func([]byte) interface{}) {
 	//Prevents concurrent modifications to the indexes
 	db.Lock()
