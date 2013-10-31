@@ -110,9 +110,10 @@ func (db *DocumentBundle) doGrowDB() {
 	newFile, _ := os.OpenFile(db.FileLoc, os.O_RDWR|os.O_CREATE, 0666)
 	defer newFile.Close()
 	stats, _ := newFile.Stat()
-	//This updates stats, right? Grow by 1gb
-	newFile.Truncate(stats.Size() + 1000000000)
-	newArr, _ := syscall.Mmap(int(newFile.Fd()), 0, int(stats.Size()), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	//Grow by 1gb
+	newSize := stats.Size() + 1000000000
+	newFile.Truncate(newSize)
+	newArr, _ := syscall.Mmap(int(newFile.Fd()), 0, int(newSize), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	db.AsBytes = newArr
 }
 
@@ -254,11 +255,43 @@ func (db *DocumentBundle) ReplaceDocument(offset uint64, newDoc Document) uint64
 }
 
 //Basically we just shift each of the existing docs to the head.
-//TODO.
 func (db *DocumentBundle) Compact() {
 	db.Lock.Lock()
 	defer db.Lock.Unlock()
 
+	firstDocPos := db.GetFirstDocOffset()
+	firstDoc := db.GetDocumentAt(firstDocPos)
+	nextDocPos := firstDoc.NextDocOffset
+	//Handle moving initial document to head if necessary
+	if firstDocPos != 16 {
+		copy(db.AsBytes[16:], firstDoc.toBytes())
+		db.setFirstDocOffset(16)
+		db.setPrevDocOffset(nextDocPos, 16)
+	}
+
+	for nextDocPos != 0 {
+		nextDoc := db.GetDocumentAt(nextDocPos)
+		insertPoint := firstDocPos + uint64(firstDoc.Size)
+
+		copy(db.AsBytes[insertPoint:], nextDoc.toBytes())
+		db.setNextDocOffset(firstDocPos, insertPoint)
+		db.setPrevDocOffset(insertPoint, nextDocPos)
+
+		firstDocPos = nextDocPos
+		nextDocPos = nextDoc.NextDocOffset
+		firstDoc = nextDoc
+	}
+
+	db.setLastDocOffset(firstDocPos)
+
+	newSize := firstDocPos + uint64(firstDoc.Size)
+	//Now shrink the underlying file & remap the mmap
+	syscall.Munmap(db.AsBytes)
+	newFile, _ := os.OpenFile(db.FileLoc, os.O_RDWR|os.O_CREATE, 0666)
+	defer newFile.Close()
+	newFile.Truncate(int64(newSize))
+	newArr, _ := syscall.Mmap(int(newFile.Fd()), 0, int(newSize), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	db.AsBytes = newArr
 }
 
 func (db *DocumentBundle) AddIndex(indexName string, keyFn func([]byte) interface{}) {
