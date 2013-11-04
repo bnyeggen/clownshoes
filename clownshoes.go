@@ -216,11 +216,8 @@ func (db *DocumentBundle) doPutDocument(doc Document) uint64 {
 	//The now 2nd-to-last doc's pointer to the next doc
 	db.setNextDocOffset(lastDocOffset, insertPoint)
 
-	//Update indexes
-	for _, idx := range db.indexes {
-		key := idx.keyFn(doc.Payload)
-		idx.lookup[key] = append(idx.lookup[key], insertPoint)
-	}
+	//Index
+	db.indexDocument(doc, insertPoint)
 
 	return insertPoint
 }
@@ -250,18 +247,27 @@ func (db *DocumentBundle) doRemoveDocumentAt(offset uint64) {
 	if db.GetLastDocOffset() == offset {
 		db.setLastDocOffset(prevDocOffset)
 	}
+	db.deindexDocument(targ, offset)
+}
 
-	//Update indexes
+func (db *DocumentBundle) deindexDocument(doc Document, offset uint64) {
 	for _, idx := range db.indexes {
-		key := idx.keyFn(targ.Payload)
+		key := idx.keyFn(doc.Payload)
 		arr := idx.lookup[key]
 		for i := 0; i < len(arr); i++ {
-			if arr[i] == key {
+			if arr[i] == offset {
 				arr[i] = arr[len(arr)-1]
 				idx.lookup[key] = arr[:len(arr)-1]
 				break
 			}
 		}
+	}
+}
+
+func (db *DocumentBundle) indexDocument(doc Document, insertPoint uint64) {
+	for _, idx := range db.indexes {
+		key := idx.keyFn(doc.Payload)
+		idx.lookup[key] = append(idx.lookup[key], insertPoint)
 	}
 }
 
@@ -280,8 +286,11 @@ func (db *DocumentBundle) ReplaceDocument(offset uint64, newDoc Document) uint64
 	defer db.Unlock()
 	curDoc := db.GetDocumentAt(offset)
 	if curDoc.NextDocOffset > newDoc.byteSize()+offset {
+		db.deindexDocument(db.GetDocumentAt(offset), offset)
 		copy(db.AsBytes[offset:], newDoc.toBytes())
+		db.indexDocument(newDoc, offset)
 	} else {
+		//Indexing is handled by subroutines
 		db.doRemoveDocumentAt(offset)
 		return db.doPutDocument(newDoc)
 	}
