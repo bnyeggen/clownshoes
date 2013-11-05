@@ -51,16 +51,6 @@ func (db *DocumentBundle) setLastDocOffset(offset uint64) {
 	uint64ToBytes(db.AsBytes, 8, offset)
 }
 
-// Packed size in bytes of all elements of a Document save the Payload.
-const docHeaderSize = 20
-
-type Document struct {
-	Size          uint32 //Number of bytes for the entire packed document, including this size & NextDocOffset
-	NextDocOffset uint64 //Offset of the next valid document
-	PrevDocOffset uint64 //Offset of previous valid document
-	Payload       []byte //Your precious data
-}
-
 // For the document at the given position, update the pointer to the next document
 func (db *DocumentBundle) setNextDocOffset(docOffset uint64, nextDocOffset uint64) {
 	uint64ToBytes(db.AsBytes, docOffset+4, nextDocOffset)
@@ -69,29 +59,6 @@ func (db *DocumentBundle) setNextDocOffset(docOffset uint64, nextDocOffset uint6
 // For the document at the given position, update the pointer to the previous document
 func (db *DocumentBundle) setPrevDocOffset(docOffset uint64, prevDocOffset uint64) {
 	uint64ToBytes(db.AsBytes, docOffset+4+8, prevDocOffset)
-}
-
-// Returns an empty document, ripe for insertion, with the given payload
-func NewDocument(payload []byte) Document {
-	return Document{docHeaderSize + uint32(len(payload)), 0, 0, payload}
-}
-
-// Total packed size of a document, returned as a uint64 but always in the uint32
-// range.
-func (doc *Document) byteSize() uint64 {
-	return uint64(len(doc.Payload)) + docHeaderSize
-}
-
-// Return a serialized byte array representing a Document
-func (doc *Document) toBytes() []byte {
-	//Don't need to rely on stated size when serializing
-	byteSize := doc.byteSize()
-	out := make([]byte, byteSize)
-	uint32ToBytes(out, 0, uint32(byteSize))
-	uint64ToBytes(out, 4, doc.NextDocOffset)
-	uint64ToBytes(out, 12, doc.PrevDocOffset)
-	copy(out[docHeaderSize:], doc.Payload)
-	return out
 }
 
 // Returns a new 1gb DocumentBundle
@@ -121,15 +88,6 @@ func (db *DocumentBundle) doGrowDB() {
 	newFile.Truncate(newSize)
 	newArr, _ := syscall.Mmap(int(newFile.Fd()), 0, int(newSize), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	db.AsBytes = newArr
-}
-
-// This version does not do its own locking, so we can support callers who already
-// have the lock.
-func (db *DocumentBundle) doGetDocumentAt(offset uint64) Document {
-	docLength := uint32FromBytes(db.AsBytes, offset)
-	nextDocPos := uint64FromBytes(db.AsBytes, offset+4)
-	prevDocPos := uint64FromBytes(db.AsBytes, offset+12)
-	return Document{docLength, nextDocPos, prevDocPos, db.AsBytes[offset+docHeaderSize : offset+uint64(docLength)]}
 }
 
 // Returns the document at the given address.  Assumes the address is valid.
@@ -328,20 +286,4 @@ func (db *DocumentBundle) Compact() {
 	newFile.Truncate(int64(newSize))
 	newArr, _ := syscall.Mmap(int(newFile.Fd()), 0, int(newSize), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	db.AsBytes = newArr
-}
-
-// Creates an index on the DB, with the given name, and the given function of the
-// document's payload for determining the key.  Right now indexes exist
-// transiently in memory, necessitating re-creation on each restart.  See README
-// for notes on future plans for indexing.
-func (db *DocumentBundle) AddIndex(indexName string, keyFn func([]byte) interface{}) {
-	//Prevents concurrent modifications to the indexes
-	db.Lock()
-	defer db.Unlock()
-	idx := index{keyFn, make(map[interface{}][]uint64)}
-	db.indexes[indexName] = idx
-	//Now calculate values by iterating thru maps
-	db.ForEachDocumentReadOnly(func(offset uint64, doc Document) {
-		idx.lookup[keyFn(doc.Payload)] = append(idx.lookup[keyFn(doc.Payload)], offset)
-	})
 }
