@@ -61,7 +61,8 @@ func (db *DocumentBundle) setPrevDocOffset(docOffset uint64, prevDocOffset uint6
 	uint64ToBytes(db.AsBytes, docOffset+4+8, prevDocOffset)
 }
 
-// Returns a new 1gb DocumentBundle
+// Returns a new 1gb DocumentBundle, or loads the DocumentBundle at that location
+// if it already exists.
 func NewDB(location string) *DocumentBundle {
 	fileOut, _ := os.OpenFile(location, os.O_RDWR|os.O_CREATE, 0666)
 	defer fileOut.Close()
