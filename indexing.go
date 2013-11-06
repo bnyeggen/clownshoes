@@ -40,7 +40,7 @@ func (db *DocumentBundle) AddIndex(indexName string, keyFn func([]byte) interfac
 	idx := index{keyFn, make(map[interface{}][]uint64)}
 	db.indexes[indexName] = idx
 	//Now calculate values by iterating thru maps
-	db.ForEachDocumentReadOnly(func(offset uint64, doc Document) {
+	db.forEachDocument(func(offset uint64, doc Document) {
 		idx.lookup[keyFn(doc.Payload)] = append(idx.lookup[keyFn(doc.Payload)], offset)
 	})
 }
@@ -51,14 +51,13 @@ func (db *DocumentBundle) RemoveIndex(indexName string) {
 	delete(db.indexes, indexName)
 }
 
-// Store the index to a flatfile.  Unimplemented.
+// Store the index to a flatfile.
 func (db *DocumentBundle) DumpIndex(indexName string, outfile string) {
 	panic("Unimplemented")
 }
 
 // Load the index to the given DB with the given name, and use the given keyFn
 // to update it in the future.  Assumes the correctness of the index.
-// Unimplemented.
 func (db *DocumentBundle) LoadIndex(keyFn func([]byte) interface{}, indexName string, outfile string) {
 	panic("Unimplemented")
 }
