@@ -40,7 +40,7 @@ func (db *DocumentBundle) AddIndex(indexName string, keyFn func([]byte) interfac
 	idx := index{keyFn, make(map[interface{}][]uint64)}
 	db.indexes[indexName] = idx
 	//Now calculate values by iterating thru maps
-	db.forEachDocument(func(offset uint64, doc Document) {
+	db.doForEachDocument(func(offset uint64, doc Document) {
 		idx.lookup[keyFn(doc.Payload)] = append(idx.lookup[keyFn(doc.Payload)], offset)
 	})
 }

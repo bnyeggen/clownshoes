@@ -154,12 +154,10 @@ func (db *DocumentBundle) doGrowDB() {
 }
 
 // Run the given function sequentially over each valid document.
-// Must not lock the DB to avoid deadlock.
 // We may support different contracts wrt locking and concurrent execution or
-// modifications later.
-func (db *DocumentBundle) forEachDocument(proc func(uint64, Document)) {
-	db.RLock()
-	defer db.RUnlock()
+// modifications later, but right now this is guaranteed not to process
+// concurrently, and assumes the caller already holds some kind of lock.
+func (db *DocumentBundle) doForEachDocument(proc func(uint64, Document)) {
 	pos := db.getFirstDocOffset()
 	for {
 		if pos == 0 {
