@@ -3,27 +3,23 @@ package clownshoes
 // Publicly facing higher-order modification functions
 
 // Using the index with the given name, lookup all the documents with the given key and return them.
-func (db *DocumentBundle) GetDocumentsWhere(indexName string, lookupKey interface{}) []Document {
+func (db *DocumentBundle) GetDocumentsWhere(indexName string, lookupKey interface{}) (docs []Document) {
 	db.RLock()
 	defer db.RUnlock()
 	idx, found := db.indexes[indexName]
 	if found {
 		offsets := idx.lookup[lookupKey]
-		out := make([]Document, 0, len(offsets))
 		for _, offset := range offsets {
-			out = append(out, db.doGetDocumentAt(offset))
+			docs = append(docs, db.doGetDocumentAt(offset))
 		}
-		return out
 	}
-	return make([]Document, 0)
+	return docs
 }
 
 // Return all the documents for which the given function returns true
-func (db *DocumentBundle) GetDocuments(filter func([]byte) bool) []Document {
+func (db *DocumentBundle) GetDocuments(filter func([]byte) bool) (docs []Document) {
 	db.RLock()
 	defer db.RUnlock()
-
-	docs := make([]Document, 0)
 
 	db.doForEachDocument(func(offset uint64, doc Document) {
 		if filter(doc.Payload) {
