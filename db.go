@@ -136,6 +136,7 @@ func NewDB(location string) *DocumentBundle {
 		//And give us some room
 		fileOut.Truncate(1000000000)
 	}
+	stats, _ = fileOut.Stat()
 	bytesOut, _ := syscall.Mmap(int(fileOut.Fd()), 0, int(stats.Size()), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	return &DocumentBundle{sync.RWMutex{}, bytesOut, location, make(map[string]index, 0)}
 }
