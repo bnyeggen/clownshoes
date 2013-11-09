@@ -37,84 +37,75 @@ func (db *DocumentBundle) GetDocuments(filter func([]byte) bool) []Document {
 // Using the index, run the replacer function on all the documents with the given
 // key.  If the second return value of the replacer function is true, replace the
 // document with the first return value.  Returns the number of documents affected.
-func (db *DocumentBundle) ReplaceDocumentsWhere(indexName string, lookupKey interface{}, replacer func([]byte) ([]byte, bool)) uint64 {
+func (db *DocumentBundle) ReplaceDocumentsWhere(indexName string, lookupKey interface{}, replacer func([]byte) ([]byte, bool)) (counter uint64) {
 	db.Lock()
 	defer db.Unlock()
 
 	idx, found := db.indexes[indexName]
 	if found {
 		offsets := idx.lookup[lookupKey]
-		ctr := uint64(0)
 		for _, offset := range offsets {
 			newPayload, modified := replacer(db.doGetDocumentAt(offset).Payload)
 			if modified {
 				db.doReplaceDocument(offset, NewDocument(newPayload))
-				ctr++
+				counter++
 			}
 		}
-		return ctr
 	}
-	return 0
+	return counter
 }
 
 // For all valid documents, if the second return value of the replacer function
 // ran over the payload is true, replace the payload with the first return
 // value. Returns the number of documents affected.
-func (db *DocumentBundle) ReplaceDocuments(replacer func([]byte) ([]byte, bool)) uint64 {
+func (db *DocumentBundle) ReplaceDocuments(replacer func([]byte) ([]byte, bool)) (counter uint64) {
 	db.Lock()
 	defer db.Unlock()
-
-	ctr := uint64(0)
 
 	db.doForEachDocument(func(offset uint64, doc Document) {
 		newPayload, modified := replacer(doc.Payload)
 		if modified {
 			db.doReplaceDocument(offset, NewDocument(newPayload))
-			ctr++
+			counter++
 		}
 	})
-
-	return ctr
+	return counter
 }
 
 // Using the index with the given name, remove all documents with the given key
 // and where the supplied function of the payload returns true.  Returns the
 // number of documents affected.
-func (db *DocumentBundle) RemoveDocumentsWhere(indexName string, lookupKey interface{}, filter func([]byte) bool) uint64 {
+func (db *DocumentBundle) RemoveDocumentsWhere(indexName string, lookupKey interface{}, filter func([]byte) bool) (counter uint64) {
 	db.Lock()
 	defer db.Unlock()
 
 	idx, found := db.indexes[indexName]
 	if found {
 		offsets := idx.lookup[lookupKey]
-		ctr := uint64(0)
 		for _, offset := range offsets {
 			if filter(db.doGetDocumentAt(offset).Payload) {
 				db.doRemoveDocumentAt(offset)
-				ctr++
+				counter++
 			}
 		}
-		return ctr
 	}
-	return 0
+	return counter
 }
 
 // Remove all documents where the supplied function of their payloads returns true.
 // Returns the number of documents affected.
-func (db *DocumentBundle) RemoveDocuments(filter func([]byte) bool) uint64 {
+func (db *DocumentBundle) RemoveDocuments(filter func([]byte) bool) (counter uint64) {
 	db.Lock()
 	defer db.Unlock()
-
-	ctr := uint64(0)
 
 	db.doForEachDocument(func(offset uint64, doc Document) {
 		if filter(doc.Payload) {
 			db.doRemoveDocumentAt(offset)
-			ctr++
+			counter++
 		}
 	})
 
-	return ctr
+	return counter
 }
 
 // Insert the given (new) document and return the index at which it was inserted.
