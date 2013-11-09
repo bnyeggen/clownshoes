@@ -4,7 +4,7 @@ package clownshoes
 const docHeaderSize = 20
 
 type Document struct {
-	Size          uint32 //Number of bytes for the entire packed document, including this size & NextDocOffset
+	Size          uint32 //Number of bytes for the entire packed document
 	NextDocOffset uint64 //Offset of the next valid document
 	PrevDocOffset uint64 //Offset of previous valid document
 	Payload       []byte //Your precious data
