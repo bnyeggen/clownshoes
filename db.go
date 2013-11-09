@@ -217,15 +217,19 @@ func (db *DocumentBundle) doRemoveDocumentAt(offset uint64) {
 	prevDocOffset := targ.PrevDocOffset
 	nextDocOffset := targ.NextDocOffset
 
-	db.setNextDocOffset(prevDocOffset, nextDocOffset)
-	db.setPrevDocOffset(nextDocOffset, prevDocOffset)
-
-	if db.getFirstDocOffset() == offset {
+	//Not first document
+	if prevDocOffset != 0 {
+		db.setNextDocOffset(prevDocOffset, nextDocOffset)
+	} else {
 		db.setFirstDocOffset(nextDocOffset)
 	}
-	if db.getLastDocOffset() == offset {
+	//Not last document
+	if nextDocOffset != 0 {
+		db.setPrevDocOffset(nextDocOffset, prevDocOffset)
+	} else {
 		db.setLastDocOffset(prevDocOffset)
 	}
+
 	db.deindexDocument(targ, offset)
 }
 
