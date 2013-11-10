@@ -160,10 +160,7 @@ func (db *DocumentBundle) doGrowDB() {
 // concurrently, and assumes the caller already holds some kind of lock.
 func (db *DocumentBundle) doForEachDocument(proc func(uint64, Document)) {
 	pos := db.getFirstDocOffset()
-	for {
-		if pos == 0 {
-			return
-		}
+	for pos != 0 {
 		doc := db.doGetDocumentAt(pos)
 		proc(pos, doc)
 		pos = doc.NextDocOffset
@@ -237,14 +234,16 @@ func (db *DocumentBundle) doRemoveDocumentAt(offset uint64) {
 // existing document and insert the new one at the end
 func (db *DocumentBundle) doReplaceDocument(offset uint64, newDoc Document) uint64 {
 	curDoc := db.doGetDocumentAt(offset)
-	if curDoc.NextDocOffset > newDoc.byteSize()+offset {
+	if newDoc.byteSize()+offset < curDoc.NextDocOffset {
 		db.deindexDocument(db.doGetDocumentAt(offset), offset)
+		newDoc.NextDocOffset = curDoc.NextDocOffset
+		newDoc.PrevDocOffset = curDoc.PrevDocOffset
 		copy(db.AsBytes[offset:], newDoc.toBytes())
 		db.indexDocument(newDoc, offset)
+		return offset
 	} else {
-		//Indexing is handled by subroutines
+		//Indexing and modifying offsets is handled by subroutines
 		db.doRemoveDocumentAt(offset)
 		return db.doPutDocument(newDoc)
 	}
-	return 0
 }
