@@ -3,7 +3,7 @@ package clownshoes
 // Publicly facing higher-order modification functions
 
 // Using the index with the given name, lookup all the documents with the given key and return them.
-func (db *DocumentBundle) GetDocumentsWhere(indexName string, lookupKey interface{}) (docs []Document) {
+func (db *DocumentBundle) GetDocumentsWhere(indexName string, lookupKey string) (docs []Document) {
 	db.RLock()
 	defer db.RUnlock()
 	idx, found := db.indexes[indexName]
@@ -33,7 +33,7 @@ func (db *DocumentBundle) GetDocuments(filter func([]byte) bool) (docs []Documen
 // Using the index, run the replacer function on all the documents with the given
 // key.  If the second return value of the replacer function is true, replace the
 // document with the first return value.  Returns the number of documents affected.
-func (db *DocumentBundle) ReplaceDocumentsWhere(indexName string, lookupKey interface{}, replacer func([]byte) ([]byte, bool)) (counter uint64) {
+func (db *DocumentBundle) ReplaceDocumentsWhere(indexName string, lookupKey string, replacer func([]byte) ([]byte, bool)) (counter uint64) {
 	db.Lock()
 	defer db.Unlock()
 
@@ -71,7 +71,7 @@ func (db *DocumentBundle) ReplaceDocuments(replacer func([]byte) ([]byte, bool))
 // Using the index with the given name, remove all documents with the given key
 // and where the supplied function of the payload returns true.  Returns the
 // number of documents affected.
-func (db *DocumentBundle) RemoveDocumentsWhere(indexName string, lookupKey interface{}, filter func([]byte) bool) (counter uint64) {
+func (db *DocumentBundle) RemoveDocumentsWhere(indexName string, lookupKey string, filter func([]byte) bool) (counter uint64) {
 	db.Lock()
 	defer db.Unlock()
 

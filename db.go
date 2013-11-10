@@ -69,7 +69,7 @@ func (db *DocumentBundle) Compact() {
 
 	//Clear indexes
 	for _, idx := range db.indexes {
-		idx.lookup = make(map[interface{}][]uint64, len(idx.lookup))
+		idx.lookup = make(map[string][]uint64, len(idx.lookup))
 	}
 
 	firstDocPos := db.getFirstDocOffset()
