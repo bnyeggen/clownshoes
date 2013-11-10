@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"io/ioutil"
 	"os"
+	"strings"
 	"testing"
 )
 
-func TestDBCRUD(t *testing.T) {
+func TestDBCreateReadDelete(t *testing.T) {
 	f, e := ioutil.TempFile("", "ClownshoesDBTest")
 	if e != nil {
 		t.Error("Problem creating db", e)
@@ -67,5 +68,62 @@ func TestDBCRUD(t *testing.T) {
 
 	if db.getFirstDocOffset() != 0 || db.getLastDocOffset() != 0 {
 		t.Error("db in invalid state")
+	}
+}
+
+func TestDBUpdate(t *testing.T) {
+	f, e := ioutil.TempFile("", "ClownshoesDBTest")
+	if e != nil {
+		t.Error("Problem creating db", e)
+	}
+	f.Close()
+	db := NewDB(f.Name())
+	defer os.Remove(f.Name())
+
+	doc1 := NewDocument([]byte("Spiffy Document 1"))
+	doc2 := NewDocument([]byte("Critical Document 2"))
+	doc3 := NewDocument([]byte("Important Document 3"))
+	db.PutDocument(doc1)
+	db.PutDocument(doc2)
+	db.PutDocument(doc3)
+
+	//Replace with shorter
+	db.ReplaceDocuments(func(payload []byte) ([]byte, bool) {
+		return []byte(strings.Replace(string(payload), "Document", "Data", -1)), true
+	})
+
+	db.doForEachDocument(func(offset uint64, doc Document) {
+		t.Log(string(doc.Payload))
+	})
+
+	docs := db.GetDocuments(func(b []byte) bool {
+		return strings.Contains(string(b), "Data")
+	})
+	if len(docs) != 3 {
+		t.Error("Documents not found")
+	}
+
+	//Replace with longer, but inside gap
+	db.ReplaceDocuments(func(payload []byte) ([]byte, bool) {
+		return []byte(strings.Replace(string(payload), "Data", "Stuff", -1)), true
+	})
+
+	docs = db.GetDocuments(func(b []byte) bool {
+		return strings.Contains(string(b), "Stuff")
+	})
+	if len(docs) != 3 {
+		t.Error("Documents not found")
+	}
+
+	//Replace with longer than the "original"
+	db.ReplaceDocuments(func(payload []byte) ([]byte, bool) {
+		return []byte(strings.Replace(string(payload), "Stuff", "Information", -1)), true
+	})
+
+	docs = db.GetDocuments(func(b []byte) bool {
+		return strings.Contains(string(b), "Information")
+	})
+	if len(docs) != 3 {
+		t.Error("Documents not found")
 	}
 }
