@@ -58,13 +58,18 @@ func (db *DocumentBundle) ReplaceDocuments(replacer func([]byte) ([]byte, bool))
 	db.Lock()
 	defer db.Unlock()
 
-	db.doForEachDocument(func(offset uint64, doc Document) {
-		newPayload, modified := replacer(doc.Payload)
+	//This traverses in reverse to avoid an infinite loop with modifications that
+	//expand documents, which results in an insert at the end of the file.
+	pos := db.getLastDocOffset()
+	for pos != 0 {
+		curDoc := db.doGetDocumentAt(pos)
+		newPayload, modified := replacer(curDoc.Payload)
 		if modified {
-			db.doReplaceDocument(offset, NewDocument(newPayload))
+			db.doReplaceDocument(pos, NewDocument(newPayload))
 			counter++
 		}
-	})
+		pos = curDoc.PrevDocOffset
+	}
 	return counter
 }
 
