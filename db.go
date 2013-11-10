@@ -73,6 +73,18 @@ func (db *DocumentBundle) Compact() {
 	}
 
 	firstDocPos := db.getFirstDocOffset()
+
+	//Compacting an empty database to 4k - will still grow in 1gb chunks
+	if firstDocPos == 0 {
+		syscall.Munmap(db.AsBytes)
+		newFile, _ := os.OpenFile(db.FileLoc, os.O_RDWR|os.O_CREATE, 0666)
+		defer newFile.Close()
+		newFile.Truncate(4096)
+		newArr, _ := syscall.Mmap(int(newFile.Fd()), 0, 4096, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+		db.AsBytes = newArr
+		return
+	}
+
 	firstDoc := db.doGetDocumentAt(firstDocPos)
 	nextDocPos := firstDoc.NextDocOffset
 
