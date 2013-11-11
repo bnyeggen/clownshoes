@@ -62,6 +62,16 @@ func (db *DocumentBundle) CopyDB(destination string) error {
 	return newFile.Close()
 }
 
+// Grow or shrink the backing storage for the given db to the given size
+func (db *DocumentBundle) doReMmap(size uint64) {
+	syscall.Munmap(db.AsBytes)
+	newFile, _ := os.OpenFile(db.FileLoc, os.O_RDWR|os.O_CREATE, 0666)
+	defer newFile.Close()
+	newFile.Truncate(int64(size))
+	newArr, _ := syscall.Mmap(int(newFile.Fd()), 0, int(size), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	db.AsBytes = newArr
+}
+
 // Concatenate all documents, adjust pointers, and truncate the file
 func (db *DocumentBundle) Compact() {
 	db.Lock()
@@ -76,41 +86,36 @@ func (db *DocumentBundle) Compact() {
 
 	//Compacting an empty database to 4k - will still grow in 1gb chunks
 	if firstDocPos == 0 {
-		syscall.Munmap(db.AsBytes)
-		newFile, _ := os.OpenFile(db.FileLoc, os.O_RDWR|os.O_CREATE, 0666)
-		defer newFile.Close()
-		newFile.Truncate(4096)
-		newArr, _ := syscall.Mmap(int(newFile.Fd()), 0, 4096, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
-		db.AsBytes = newArr
+		db.doReMmap(4096)
 		return
 	}
 
 	firstDoc := db.doGetDocumentAt(firstDocPos)
 	nextDocPos := firstDoc.NextDocOffset
 
-	//Handle moving initial document to head if necessary
+	//Move initial document to the head if necessary
 	if firstDocPos != 16 {
 		copy(db.AsBytes[16:], firstDoc.toBytes())
 		db.setFirstDocOffset(16)
-		db.setPrevDocOffset(nextDocPos, 16)
+		//Back-pointer handled below, if there is a next document to point back from
 
 		//Update index
 		for _, idx := range db.indexes {
 			key := idx.keyFn(firstDoc.Payload)
 			idx.lookup[key] = append(idx.lookup[key], 16)
 		}
-		//Necessary to set last-doc pointer if we have only one doc
+
 		firstDocPos = 16
 	}
 
 	for nextDocPos != 0 {
 		nextDoc := db.doGetDocumentAt(nextDocPos)
-		insertPoint := firstDocPos + uint64(firstDoc.Size)
+		insertPoint := firstDocPos + firstDoc.byteSize()
 
 		//Move nextDoc to end of firstDoc, point nextDoc and firstDoc at each other
 		copy(db.AsBytes[insertPoint:], nextDoc.toBytes())
 		db.setNextDocOffset(firstDocPos, insertPoint)
-		db.setPrevDocOffset(insertPoint, nextDocPos)
+		db.setPrevDocOffset(insertPoint, firstDocPos)
 
 		//Update index
 		for _, idx := range db.indexes {
@@ -124,16 +129,12 @@ func (db *DocumentBundle) Compact() {
 		firstDoc = nextDoc
 	}
 
+	//nextDocPos is invalid at this point, so this is the final valid position
 	db.setLastDocOffset(firstDocPos)
-
 	newSize := firstDocPos + uint64(firstDoc.Size)
-	//Now shrink the underlying file & remap the mmap
-	syscall.Munmap(db.AsBytes)
-	newFile, _ := os.OpenFile(db.FileLoc, os.O_RDWR|os.O_CREATE, 0666)
-	defer newFile.Close()
-	newFile.Truncate(int64(newSize))
-	newArr, _ := syscall.Mmap(int(newFile.Fd()), 0, int(newSize), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
-	db.AsBytes = newArr
+
+	//Now shrink the underlying file & re-mmap
+	db.doReMmap(newSize)
 }
 
 // Returns a new 1gb DocumentBundle, or loads the DocumentBundle at that location
@@ -155,15 +156,8 @@ func NewDB(location string) *DocumentBundle {
 
 // Grow the db's backing storage by 1gb.
 func (db *DocumentBundle) doGrowDB() {
-	syscall.Munmap(db.AsBytes)
-	newFile, _ := os.OpenFile(db.FileLoc, os.O_RDWR|os.O_CREATE, 0666)
-	defer newFile.Close()
-	stats, _ := newFile.Stat()
-	//Grow by 1gb
-	newSize := stats.Size() + 1000000000
-	newFile.Truncate(newSize)
-	newArr, _ := syscall.Mmap(int(newFile.Fd()), 0, int(newSize), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
-	db.AsBytes = newArr
+	oldSize := uint64(len(db.AsBytes))
+	db.doReMmap(oldSize + 1000000000)
 }
 
 // Run the given function sequentially over each valid document.
@@ -199,7 +193,7 @@ func (db *DocumentBundle) doPutDocument(doc Document) uint64 {
 
 	lastDoc := db.doGetDocumentAt(lastDocOffset)
 	//If not enough space, grow DB
-	if !(lastDocOffset+lastDoc.byteSize()+doc.byteSize() >= uint64(len(db.AsBytes))) {
+	if lastDocOffset+lastDoc.byteSize()+doc.byteSize() >= uint64(len(db.AsBytes)) {
 		db.doGrowDB()
 	}
 	//Adjust doc pointers
