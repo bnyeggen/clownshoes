@@ -92,10 +92,6 @@ func TestDBUpdate(t *testing.T) {
 		return []byte(strings.Replace(string(payload), "Document", "Data", -1)), true
 	})
 
-	db.doForEachDocument(func(offset uint64, doc Document) {
-		t.Log(string(doc.Payload))
-	})
-
 	docs := db.GetDocuments(func(b []byte) bool {
 		return strings.Contains(string(b), "Data")
 	})
@@ -126,4 +122,41 @@ func TestDBUpdate(t *testing.T) {
 	if len(docs) != 3 {
 		t.Error("Documents not found")
 	}
+}
+
+func TestDBCompaction(t *testing.T) {
+	f, e := ioutil.TempFile("", "ClownshoesDBTest")
+	if e != nil {
+		t.Error("Problem creating db", e)
+	}
+	f.Close()
+	db := NewDB(f.Name())
+	db.Compact()
+
+	defer os.Remove(f.Name())
+
+	doc1 := NewDocument([]byte("50 byte document lorem ipsum z"))
+	doc2 := NewDocument([]byte("Another 50 byte document herez"))
+
+	t.Log("Adding documents")
+	//1.5gb
+	for i := 0; i < 15000000; i++ {
+		db.PutDocument(doc1)
+		db.PutDocument(doc2)
+	}
+
+	t.Log("Removing documents")
+	db.RemoveDocuments(func(b []byte) bool {
+		return bytes.Equal(b, doc1.Payload)
+	})
+
+	if len(db.GetDocuments(func(b []byte) bool {
+		return true
+	})) != 15000000 {
+		t.Error("Missing documents")
+	}
+
+	t.Log("Compacting")
+	db.Compact()
+
 }
