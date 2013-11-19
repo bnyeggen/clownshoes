@@ -56,16 +56,7 @@ func (db *DocumentBundle) RemoveIndex(indexName string) {
 	delete(db.indexes, indexName)
 }
 
-// Store the indexes to a file as a packed series of index records.
-// Each record is:
-// A uint64 representing the total number of bytes in the record
-// A uint32 representing the number of bytes in the index name
-// The index name
-// And then for each key / offset pair:
-// An uint32 representing the number of bytes in the key
-// An uint32 representing the number of bytes in the offsets (not the number of elements)
-// The key value
-// All of the offsets for that index name / key, as uint64s
+// Store the indexes to a file.
 func (db *DocumentBundle) DumpIndexes(outfile string) {
 	f, _ := os.OpenFile(outfile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
 	defer f.Close()
