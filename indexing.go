@@ -1,8 +1,8 @@
 package clownshoes
 
 import (
+	"encoding/gob"
 	"os"
-	"syscall"
 )
 
 //Indexes have to be in memory for performance anyway, so we store them as
@@ -69,40 +69,12 @@ func (db *DocumentBundle) RemoveIndex(indexName string) {
 func (db *DocumentBundle) DumpIndexes(outfile string) {
 	f, _ := os.OpenFile(outfile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
 	defer f.Close()
-
-	buffer := make([]byte, 8)
-
-	for idxName, idx := range db.indexes {
-		indexBuffer := make([]byte, 12, 4096)
-		idxNameAsBytes := []byte(idxName)
-		//Write length of index name
-		uint32ToBytes(indexBuffer, 8, uint32(len(idxNameAsBytes)))
-		//Write index name
-		indexBuffer = append(indexBuffer, idxNameAsBytes...)
-
-		for key, positions := range idx.lookup {
-			keyAsBytes := []byte(key)
-			uint32ToBytes(buffer, 0, uint32(len(keyAsBytes)))
-			uint32ToBytes(buffer, 4, uint32(len(positions)*8))
-			//Write length of key, and length of positions buffer
-			indexBuffer = append(indexBuffer, buffer...)
-			//Write key
-			indexBuffer = append(indexBuffer, keyAsBytes...)
-
-			//Group the positions data
-			buffer = make([]byte, len(positions)*8)
-			for i, position := range positions {
-				uint64ToBytes(buffer, uint64(i*8), position)
-			}
-
-			//Write positions buffer
-			indexBuffer = append(indexBuffer, buffer...)
-		}
-		//Now that we know the total length of the index buffer, write it at the beginning
-		uint64ToBytes(indexBuffer, 0, uint64(len(indexBuffer)))
-		//And put it on disk
-		f.Write(indexBuffer)
+	outGobEncoder := gob.NewEncoder(f)
+	out := make(map[string]map[string][]uint64)
+	for idxname, idx := range db.indexes {
+		out[idxname] = idx.lookup
 	}
+	outGobEncoder.Encode(out)
 }
 
 // Load the packed indexes from the given file, using the supplied map to associate
@@ -110,45 +82,13 @@ func (db *DocumentBundle) DumpIndexes(outfile string) {
 // such.  Assumes the index is valid & up-to-date.
 func (db *DocumentBundle) LoadIndexes(nameToKeyFns map[string]func([]byte) string, indexFile string) {
 	f, _ := os.Open(indexFile)
-	stats, _ := f.Stat()
-	//I love mmaping
-	buffer, _ := syscall.Mmap(int(f.Fd()), 0, int(stats.Size()), syscall.PROT_READ, syscall.MAP_SHARED)
-	pos := uint64(0)
-	out := make(map[string]index)
+	defer f.Close()
+	inGobDecoder := gob.NewDecoder(f)
 
-	for pos < uint64(len(buffer)) {
-		var thisIdx index
+	data := make(map[string]map[string][]uint64)
+	inGobDecoder.Decode(&data)
 
-		bytesRead := uint64(0)
-		idxLength := uint64FromBytes(buffer, pos)
-		bytesRead += 8
-		idxNameLength := uint64(uint32FromBytes(buffer, pos+bytesRead))
-		bytesRead += 4
-		idxName := string(buffer[pos+bytesRead : pos+bytesRead+idxNameLength])
-		bytesRead += idxNameLength
-
-		thisIdx.keyFn = nameToKeyFns[idxName]
-		thisIdx.lookup = make(map[string][]uint64)
-
-		for uint64(bytesRead) < idxLength {
-			keyLength := uint64(uint32FromBytes(buffer, pos+bytesRead))
-			bytesRead += 4
-			offsetLength := uint64(uint32FromBytes(buffer, pos+bytesRead))
-			bytesRead += 4
-			key := string(buffer[pos+bytesRead : pos+bytesRead+keyLength])
-			bytesRead += keyLength
-			nOffsets := offsetLength / 8
-			offsets := make([]uint64, nOffsets)
-			for i := uint64(0); i < nOffsets; i++ {
-				offsets[i] = uint64FromBytes(buffer, pos+bytesRead)
-				bytesRead += 8
-			}
-			thisIdx.lookup[key] = offsets
-		}
-
-		out[idxName] = thisIdx
-		pos += idxLength
+	for idxName, idxlookup := range data {
+		db.indexes[idxName] = index{nameToKeyFns[idxName], idxlookup}
 	}
-
-	db.indexes = out
 }
