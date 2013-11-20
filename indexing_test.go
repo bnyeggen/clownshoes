@@ -47,4 +47,28 @@ func TestIndexing(t *testing.T) {
 				"\nDB docs: "+fmt.Sprint(doc)+"\nReal values: "+fmt.Sprint(v))
 		}
 	}
+
+	//Test index dump & recreation
+	idxFile, e := ioutil.TempFile("", "ClownshoesDBTest")
+	if e != nil {
+		t.Error("Problem creating indexdump", e)
+	}
+	idxFileName := idxFile.Name()
+	idxFile.Close()
+	defer os.Remove(idxFileName)
+
+	db.DumpIndexes(idxFileName)
+	db.RemoveIndex("ftb")
+	if len(db.indexes) != 0 {
+		t.Error("Indexes not removed")
+	}
+
+	var idxToKeyFn = map[string]func([]byte) string{"ftb": first2Bytes}
+	db.LoadIndexes(idxToKeyFn, idxFileName)
+	for k, v := range rawStorage {
+		doc := db.GetDocumentsWhere("ftb", k)
+		if len(doc) != len(v) {
+			t.Error("Error in index re-creation")
+		}
+	}
 }
