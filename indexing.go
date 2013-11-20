@@ -58,8 +58,10 @@ func (db *DocumentBundle) RemoveIndex(indexName string) {
 
 // Store the indexes to a file.
 func (db *DocumentBundle) DumpIndexes(outfile string) {
+	db.RLock()
 	f, _ := os.OpenFile(outfile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
 	defer f.Close()
+	defer db.RUnlock()
 	outGobEncoder := gob.NewEncoder(f)
 	out := make(map[string]map[string][]uint64)
 	for idxname, idx := range db.indexes {
@@ -72,8 +74,10 @@ func (db *DocumentBundle) DumpIndexes(outfile string) {
 // the appropriate key function with them going forward.  Set the db's indexes as
 // such.  Assumes the index is valid & up-to-date.
 func (db *DocumentBundle) LoadIndexes(nameToKeyFns map[string]func([]byte) string, indexFile string) {
+	db.Lock()
 	f, _ := os.Open(indexFile)
 	defer f.Close()
+	defer db.Unlock()
 	inGobDecoder := gob.NewDecoder(f)
 
 	data := make(map[string]map[string][]uint64)
