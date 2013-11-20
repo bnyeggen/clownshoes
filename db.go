@@ -49,17 +49,22 @@ func (db *DocumentBundle) setPrevDocOffset(docOffset uint64, prevDocOffset uint6
 
 // Copies the data, overwriting if necessary, to a file at destination.  Calling
 // this periodically is the only way to ensure you have a consistent version of
-// your data.
-// This should also dump the indexes, once that's implemented.
-func (db *DocumentBundle) CopyDB(destination string) error {
-	db.Lock()
-	db.Unlock()
-	newFile, err := os.Create(destination)
+// your data.  "" as indexDest does not dump indexes.
+func (db *DocumentBundle) CopyDB(dataDest, indexDest string) error {
+	db.RLock()
+	defer db.Unlock()
+	dataFile, err := os.Create(dataDest)
 	if err != nil {
 		return err
 	}
-	newFile.Write(db.AsBytes)
-	return newFile.Close()
+	if indexDest != "" {
+		err = db.dumpIndexes(indexDest)
+		if err != nil {
+			return err
+		}
+	}
+	dataFile.Write(db.AsBytes)
+	return dataFile.Close()
 }
 
 // Grow or shrink the backing storage for the given db to the given size

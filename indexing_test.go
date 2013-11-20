@@ -57,7 +57,7 @@ func TestIndexing(t *testing.T) {
 	idxFile.Close()
 	defer os.Remove(idxFileName)
 
-	db.DumpIndexes(idxFileName)
+	db.dumpIndexes(idxFileName)
 	db.RemoveIndex("ftb")
 	if len(db.indexes) != 0 {
 		t.Error("Indexes not removed")

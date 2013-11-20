@@ -56,18 +56,21 @@ func (db *DocumentBundle) RemoveIndex(indexName string) {
 	delete(db.indexes, indexName)
 }
 
-// Store the indexes to a file.
-func (db *DocumentBundle) DumpIndexes(outfile string) {
-	db.RLock()
-	f, _ := os.OpenFile(outfile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
+// Store the indexes to a file. This is private because for consistency it should
+// always happen in the context of CopyDB
+func (db *DocumentBundle) dumpIndexes(outfile string) error {
+	f, e := os.OpenFile(outfile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
+	if e != nil {
+		return e
+	}
 	defer f.Close()
-	defer db.RUnlock()
 	outGobEncoder := gob.NewEncoder(f)
 	out := make(map[string]map[string][]uint64)
 	for idxname, idx := range db.indexes {
 		out[idxname] = idx.lookup
 	}
-	outGobEncoder.Encode(out)
+	e = outGobEncoder.Encode(out)
+	return e
 }
 
 // Load the packed indexes from the given file, using the supplied map to associate
