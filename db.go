@@ -188,6 +188,7 @@ func (db *DocumentBundle) doPutDocument(doc Document) uint64 {
 		db.setFirstDocOffset(16)
 		db.setLastDocOffset(16)
 		copy(db.AsBytes[16:], doc.toBytes())
+		db.indexDocument(doc, 16)
 		return 16
 	}
 
