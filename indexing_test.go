@@ -1,11 +1,9 @@
 package clownshoes
 
 import (
-	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"os"
-	"strconv"
 	"testing"
 )
 
@@ -42,9 +40,7 @@ func TestIndexing(t *testing.T) {
 	for k, v := range rawStorage {
 		doc := db.GetDocumentsWhere("ftb", k)
 		if len(doc) != len(v) {
-			t.Error("Error in indexed retrieval. DB storage:",
-				strconv.Itoa(len(doc)), "Real storage: ", strconv.Itoa(len(v)),
-				"\nDB docs: "+fmt.Sprint(doc)+"\nReal values: "+fmt.Sprint(v))
+			t.Error("Error in indexed retrieval")
 		}
 	}
 
