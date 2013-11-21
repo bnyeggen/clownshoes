@@ -5,9 +5,8 @@ import (
 	"os"
 )
 
-//Indexes have to be in memory for performance anyway, so we store them as
-//hashmaps.  Equality only.  And, they aren't persistent - you have to re-add them
-//(& recalculate) on startup.
+// Indexes have to be in memory for performance anyway, so we store them as
+// hashmaps.  Equality only.
 type index struct {
 	keyFn  func([]byte) string //Derives the key from the document's data
 	lookup map[string][]uint64 //Maintains the lookup from key value to a list of offsets
@@ -36,8 +35,8 @@ func (db *DocumentBundle) indexDocument(doc Document, insertPoint uint64) {
 
 // Creates an index on the DB, with the given name, and the given function of the
 // document's payload for determining the key.  Right now indexes exist
-// transiently in memory, necessitating re-creation on each restart.  See README
-// for notes on future plans for indexing.
+// transiently in memory, necessitating re-creation or deserialization on each
+// restart.
 func (db *DocumentBundle) AddIndex(indexName string, keyFn func([]byte) string) {
 	//Prevents concurrent modifications to the indexes
 	db.Lock()
@@ -50,6 +49,7 @@ func (db *DocumentBundle) AddIndex(indexName string, keyFn func([]byte) string) 
 	})
 }
 
+// Remove the given index from the DB.
 func (db *DocumentBundle) RemoveIndex(indexName string) {
 	db.Lock()
 	defer db.Unlock()
@@ -74,8 +74,9 @@ func (db *DocumentBundle) dumpIndexes(outfile string) error {
 }
 
 // Load the packed indexes from the given file, using the supplied map to associate
-// the appropriate key function with them going forward.  Set the db's indexes as
-// such.  Assumes the index is valid & up-to-date.
+// the appropriate key function with them going forward.  Add them to the given
+// db's indexes.  Assumes the index is valid & up-to-date with respect to the given
+// DB.
 func (db *DocumentBundle) LoadIndexes(nameToKeyFns map[string]func([]byte) string, indexFile string) {
 	db.Lock()
 	f, _ := os.Open(indexFile)

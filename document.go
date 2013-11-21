@@ -4,7 +4,7 @@ package clownshoes
 const docHeaderSize = 20
 
 type Document struct {
-	Size          uint32 //Number of bytes for the entire packed document
+	Size          uint32 //Number of bytes for the entire packed document. This field is only used for deserialization.
 	NextDocOffset uint64 //Offset of the next valid document
 	PrevDocOffset uint64 //Offset of previous valid document
 	Payload       []byte //Your precious data
@@ -33,8 +33,7 @@ func (doc *Document) toBytes() []byte {
 	return out
 }
 
-// This version does not do its own locking, so we can support callers who already
-// have the lock.
+// Retrieve the document at the given index, assuming the given index is valid.
 func (db *DocumentBundle) doGetDocumentAt(offset uint64) Document {
 	docLength := uint32FromBytes(db.AsBytes, offset)
 	nextDocPos := uint64FromBytes(db.AsBytes, offset+4)

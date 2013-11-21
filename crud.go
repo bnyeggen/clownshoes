@@ -2,7 +2,8 @@ package clownshoes
 
 // Publicly facing higher-order modification functions
 
-// Using the index with the given name, lookup all the documents with the given key and return them.
+// Using the index with the given name, look up all the documents with the
+// given key and return them.
 func (db *DocumentBundle) GetDocumentsWhere(indexName string, lookupKey string) (docs []Document) {
 	db.RLock()
 	defer db.RUnlock()
@@ -16,7 +17,8 @@ func (db *DocumentBundle) GetDocumentsWhere(indexName string, lookupKey string) 
 	return docs
 }
 
-// Return all the documents for which the given function returns true
+// Return all the documents for which the given function returns true, scanning
+// the DB to do so.
 func (db *DocumentBundle) GetDocuments(filter func([]byte) bool) (docs []Document) {
 	db.RLock()
 	defer db.RUnlock()
@@ -94,7 +96,7 @@ func (db *DocumentBundle) RemoveDocumentsWhere(indexName string, lookupKey strin
 }
 
 // Remove all documents where the supplied function of their payloads returns true.
-// Returns the number of documents affected.
+// Scans the whole DB and returns the number of documents affected.
 func (db *DocumentBundle) RemoveDocuments(filter func([]byte) bool) (counter uint64) {
 	db.Lock()
 	defer db.Unlock()

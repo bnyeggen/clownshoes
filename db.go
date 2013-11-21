@@ -77,7 +77,8 @@ func (db *DocumentBundle) doReMmap(size uint64) {
 	db.AsBytes = newArr
 }
 
-// Concatenate all documents, adjust pointers, and truncate the file
+// Concatenate all documents, adjust pointers to be consistent, re-index,
+// and truncate the file.
 func (db *DocumentBundle) Compact() {
 	db.Lock()
 	defer db.Unlock()
@@ -178,8 +179,8 @@ func (db *DocumentBundle) doForEachDocument(proc func(uint64, Document)) {
 	}
 }
 
-// This version does not do its own locking, so we can support callers who already
-// have the lock.
+// Without acquiring the lock (assumes the caller already holds it), insert the
+// given document at the end of the DB.
 func (db *DocumentBundle) doPutDocument(doc Document) uint64 {
 	lastDocOffset := db.getLastDocOffset()
 
