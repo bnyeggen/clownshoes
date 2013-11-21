@@ -7,8 +7,3 @@ until then, don't crash plz).  Snapshots are supported, however.
 This would be faster in C, since we could just type-pun the struct-byte
 conversion, but I'm using this as the local backing store for a Go-based
 webapp.  Cgo is a possibility.
-
-The major feature TODO is to persist indexes between shutdowns.  We could just
-dump it in a simple flatfile format; re-importation just requires specifying the
-indexing function in code (but you specified it at creation, so presumably you
-still have it somewhere).
