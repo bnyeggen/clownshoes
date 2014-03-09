@@ -68,13 +68,26 @@ func (db *DocumentBundle) CopyDB(dataDest, indexDest string) error {
 }
 
 // Grow or shrink the backing storage for the given db to the given size
-func (db *DocumentBundle) doReMmap(size uint64) {
-	syscall.Munmap(db.AsBytes)
-	newFile, _ := os.OpenFile(db.FileLoc, os.O_RDWR|os.O_CREATE, 0666)
+func (db *DocumentBundle) doReMmap(size uint64) error {
+	e := syscall.Munmap(db.AsBytes)
+	if e != nil {
+		return e
+	}
+	newFile, e := os.OpenFile(db.FileLoc, os.O_RDWR|os.O_CREATE, 0666)
+	if e != nil {
+		return e
+	}
 	defer newFile.Close()
-	newFile.Truncate(int64(size))
-	newArr, _ := syscall.Mmap(int(newFile.Fd()), 0, int(size), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	e = newFile.Truncate(int64(size))
+	if e != nil {
+		return e
+	}
+	newArr, e := syscall.Mmap(int(newFile.Fd()), 0, int(size), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	if e != nil {
+		return e
+	}
 	db.AsBytes = newArr
+	return nil
 }
 
 // Concatenate all documents, adjust pointers to be consistent, re-index,
