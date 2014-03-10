@@ -20,6 +20,15 @@ type DocumentBundle struct {
 	indexes      map[string]index //For exact-match indexing
 }
 
+//Abstracts writes to allow for transparent journaling.
+func (db *DocumentBundle) writeBytes(pos uint64, data []byte) {
+	copy(db.AsBytes[pos:], data)
+}
+
+func (db *DocumentBundle) writePointer(pos uint64, data uint64) {
+	uint64ToBytes(db.AsBytes, pos, data)
+}
+
 // Return the offset of the first valid document in the DB, or 0 if there is none
 func (db *DocumentBundle) getFirstDocOffset() uint64 {
 	return uint64FromBytes(db.AsBytes, 0)
@@ -31,20 +40,20 @@ func (db *DocumentBundle) getLastDocOffset() uint64 {
 }
 
 func (db *DocumentBundle) setFirstDocOffset(offset uint64) {
-	uint64ToBytes(db.AsBytes, 0, offset)
+	db.writePointer(0, offset)
 }
 func (db *DocumentBundle) setLastDocOffset(offset uint64) {
-	uint64ToBytes(db.AsBytes, 8, offset)
+	db.writePointer(8, offset)
 }
 
 // For the document at the given position, update the pointer to the next document
 func (db *DocumentBundle) setNextDocOffset(docOffset uint64, nextDocOffset uint64) {
-	uint64ToBytes(db.AsBytes, docOffset+4, nextDocOffset)
+	db.writePointer(docOffset+4, nextDocOffset)
 }
 
 // For the document at the given position, update the pointer to the previous document
 func (db *DocumentBundle) setPrevDocOffset(docOffset uint64, prevDocOffset uint64) {
-	uint64ToBytes(db.AsBytes, docOffset+4+8, prevDocOffset)
+	db.writePointer(docOffset+4+8, prevDocOffset)
 }
 
 // Copies the data, overwriting if necessary, to a file at destination.  Calling
@@ -67,6 +76,28 @@ func (db *DocumentBundle) CopyDB(dataDest, indexDest string) error {
 	return dataFile.Close()
 }
 
+// Flush all writes to disk by un- and re-mmapping
+func (db *DocumentBundle) Sync() error {
+	db.Lock()
+	defer db.Unlock()
+
+	size := len(db.AsBytes)
+	e := syscall.Munmap(db.AsBytes)
+	if e != nil {
+		return e
+	}
+	newFile, e := os.OpenFile(db.FileLoc, os.O_RDWR|os.O_CREATE, 0666)
+	if e != nil {
+		return e
+	}
+	newArr, e := syscall.Mmap(int(newFile.Fd()), 0, size, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	if e != nil {
+		return e
+	}
+	db.AsBytes = newArr
+	return newFile.Close()
+}
+
 // Grow or shrink the backing storage for the given db to the given size
 func (db *DocumentBundle) doReMmap(size uint64) error {
 	e := syscall.Munmap(db.AsBytes)
@@ -77,7 +108,6 @@ func (db *DocumentBundle) doReMmap(size uint64) error {
 	if e != nil {
 		return e
 	}
-	defer newFile.Close()
 	e = newFile.Truncate(int64(size))
 	if e != nil {
 		return e
@@ -87,7 +117,7 @@ func (db *DocumentBundle) doReMmap(size uint64) error {
 		return e
 	}
 	db.AsBytes = newArr
-	return nil
+	return newFile.Close()
 }
 
 // Concatenate all documents, adjust pointers to be consistent, re-index,
@@ -114,7 +144,7 @@ func (db *DocumentBundle) Compact() {
 
 	//Move initial document to the head if necessary
 	if firstDocPos != 16 {
-		copy(db.AsBytes[16:], firstDoc.toBytes())
+		db.writeBytes(16, firstDoc.toBytes())
 		db.setFirstDocOffset(16)
 		//Back-pointer handled below, if there is a next document to point back from
 
@@ -132,7 +162,7 @@ func (db *DocumentBundle) Compact() {
 		insertPoint := firstDocPos + firstDoc.byteSize()
 
 		//Move nextDoc to end of firstDoc, point nextDoc and firstDoc at each other
-		copy(db.AsBytes[insertPoint:], nextDoc.toBytes())
+		db.writeBytes(insertPoint, nextDoc.toBytes())
 		db.setNextDocOffset(firstDocPos, insertPoint)
 		db.setPrevDocOffset(insertPoint, firstDocPos)
 
@@ -206,7 +236,7 @@ func (db *DocumentBundle) doPutDocument(doc Document) uint64 {
 		doc.NextDocOffset = 0
 		db.setFirstDocOffset(16)
 		db.setLastDocOffset(16)
-		copy(db.AsBytes[16:], doc.toBytes())
+		db.writeBytes(16, doc.toBytes())
 		db.indexDocument(doc, 16)
 		return 16
 	}
@@ -221,7 +251,7 @@ func (db *DocumentBundle) doPutDocument(doc Document) uint64 {
 	doc.NextDocOffset = 0
 	//Appending
 	insertPoint := lastDocOffset + lastDoc.byteSize()
-	copy(db.AsBytes[insertPoint:], doc.toBytes())
+	db.writeBytes(insertPoint, doc.toBytes())
 	//Update the DB pointer to the last doc
 	db.setLastDocOffset(insertPoint)
 	//The now 2nd-to-last doc's pointer to the next doc
@@ -264,7 +294,7 @@ func (db *DocumentBundle) doReplaceDocument(offset uint64, newDoc Document) uint
 		db.deindexDocument(db.doGetDocumentAt(offset), offset)
 		newDoc.NextDocOffset = curDoc.NextDocOffset
 		newDoc.PrevDocOffset = curDoc.PrevDocOffset
-		copy(db.AsBytes[offset:], newDoc.toBytes())
+		db.writeBytes(offset, newDoc.toBytes())
 		db.indexDocument(newDoc, offset)
 		return offset
 	} else {
