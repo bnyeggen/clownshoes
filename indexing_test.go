@@ -67,4 +67,29 @@ func TestIndexing(t *testing.T) {
 			t.Error("Error in index re-creation")
 		}
 	}
+	var removedK string
+	//Test index-based deletion
+	for k, v := range rawStorage {
+		removedK = k
+		ct := db.RemoveDocumentsWhere("ftb", k, func([]byte) bool { return true })
+		if ct != uint64(len(v)) {
+			t.Error("Insufficient documents removed")
+		}
+		if len(db.GetDocumentsWhere("ftb", k)) != 0 {
+			t.Error("Documents exist after removal")
+		}
+		break
+	}
+	delete(rawStorage, removedK)
+	//And compaction after index-based deletion
+	db.Compact()
+	//And subsequent lookups
+	for k, v := range rawStorage {
+		doc := db.GetDocumentsWhere("ftb", k)
+		if len(doc) != len(v) {
+			t.Log(len(doc))
+			t.Log(len(v))
+			t.Error("Error in indexed retrieval after indexed deletion")
+		}
+	}
 }
