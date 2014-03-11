@@ -33,6 +33,16 @@ func (db *DocumentBundle) indexDocument(doc Document, insertPoint uint64) {
 	}
 }
 
+//For using in the context of already-locking fns
+func (db *DocumentBundle) doAddIndex(indexName string, keyFn func([]byte) string) {
+	idx := index{keyFn, make(map[string][]uint64)}
+	db.indexes[indexName] = idx
+	//Now calculate values by iterating thru maps
+	db.doForEachDocument(func(offset uint64, doc Document) {
+		idx.lookup[keyFn(doc.Payload)] = append(idx.lookup[keyFn(doc.Payload)], offset)
+	})
+}
+
 // Creates an index on the DB, with the given name, and the given function of the
 // document's payload for determining the key.  Right now indexes exist
 // transiently in memory, necessitating re-creation or deserialization on each
@@ -41,12 +51,7 @@ func (db *DocumentBundle) AddIndex(indexName string, keyFn func([]byte) string) 
 	//Prevents concurrent modifications to the indexes
 	db.Lock()
 	defer db.Unlock()
-	idx := index{keyFn, make(map[string][]uint64)}
-	db.indexes[indexName] = idx
-	//Now calculate values by iterating thru maps
-	db.doForEachDocument(func(offset uint64, doc Document) {
-		idx.lookup[keyFn(doc.Payload)] = append(idx.lookup[keyFn(doc.Payload)], offset)
-	})
+	db.doAddIndex(indexName, keyFn)
 }
 
 // Remove the given index from the DB.
