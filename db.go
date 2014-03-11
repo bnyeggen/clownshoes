@@ -4,8 +4,10 @@ package clownshoes
 
 import (
 	"os"
+	"reflect"
 	"sync"
 	"syscall"
+	"unsafe"
 )
 
 //Storage schema:
@@ -61,7 +63,7 @@ func (db *DocumentBundle) setPrevDocOffset(docOffset uint64, prevDocOffset uint6
 // your data.  "" as indexDest does not dump indexes.
 func (db *DocumentBundle) CopyDB(dataDest, indexDest string) error {
 	db.RLock()
-	defer db.Unlock()
+	defer db.RUnlock()
 	dataFile, err := os.Create(dataDest)
 	if err != nil {
 		return err
@@ -76,26 +78,22 @@ func (db *DocumentBundle) CopyDB(dataDest, indexDest string) error {
 	return dataFile.Close()
 }
 
-// Flush all writes to disk by un- and re-mmapping
+func MSync(m *[]byte) error {
+	dh := (*reflect.SliceHeader)(unsafe.Pointer(m))
+	addr := dh.Data
+	mmap_len := uintptr(dh.Len)
+	_, _, errno := syscall.Syscall(syscall.SYS_MSYNC, addr, mmap_len, syscall.MS_SYNC)
+	if errno != 0 {
+		return syscall.Errno(errno)
+	}
+	return nil
+}
+
+// Flush all writes to disk
 func (db *DocumentBundle) Sync() error {
 	db.Lock()
 	defer db.Unlock()
-
-	size := len(db.AsBytes)
-	e := syscall.Munmap(db.AsBytes)
-	if e != nil {
-		return e
-	}
-	newFile, e := os.OpenFile(db.FileLoc, os.O_RDWR|os.O_CREATE, 0666)
-	if e != nil {
-		return e
-	}
-	newArr, e := syscall.Mmap(int(newFile.Fd()), 0, size, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
-	if e != nil {
-		return e
-	}
-	db.AsBytes = newArr
-	return newFile.Close()
+	return MSync(&db.AsBytes)
 }
 
 // Grow or shrink the backing storage for the given db to the given size
@@ -126,9 +124,12 @@ func (db *DocumentBundle) Compact() {
 	db.Lock()
 	defer db.Unlock()
 
-	//Clear indexes
-	for _, idx := range db.indexes {
-		idx.lookup = make(map[string][]uint64, len(idx.lookup))
+	idxNames := make([]string, 0)
+	idxFns := make([]func([]byte) string, 0)
+	//Record indexes for re-creation later
+	for idxName, idx := range db.indexes {
+		idxNames = append(idxNames, idxName)
+		idxFns = append(idxFns, idx.keyFn)
 	}
 
 	firstDocPos := db.getFirstDocOffset()
@@ -148,12 +149,6 @@ func (db *DocumentBundle) Compact() {
 		db.setFirstDocOffset(16)
 		//Back-pointer handled below, if there is a next document to point back from
 
-		//Update index
-		for _, idx := range db.indexes {
-			key := idx.keyFn(firstDoc.Payload)
-			idx.lookup[key] = append(idx.lookup[key], 16)
-		}
-
 		firstDocPos = 16
 	}
 
@@ -165,12 +160,6 @@ func (db *DocumentBundle) Compact() {
 		db.writeBytes(insertPoint, nextDoc.toBytes())
 		db.setNextDocOffset(firstDocPos, insertPoint)
 		db.setPrevDocOffset(insertPoint, firstDocPos)
-
-		//Update index
-		for _, idx := range db.indexes {
-			key := idx.keyFn(nextDoc.Payload)
-			idx.lookup[key] = append(idx.lookup[key], insertPoint)
-		}
 
 		//Move up cursor
 		firstDocPos = insertPoint
@@ -184,6 +173,11 @@ func (db *DocumentBundle) Compact() {
 
 	//Now shrink the underlying file & re-mmap
 	db.doReMmap(newSize)
+
+	//And re-add indexes, which blows away the old values
+	for i := 0; i < len(idxNames); i++ {
+		db.doAddIndex(idxNames[0], idxFns[0])
+	}
 }
 
 // Returns a new 1gb DocumentBundle, or loads the DocumentBundle at that location
@@ -199,7 +193,9 @@ func NewDB(location string) *DocumentBundle {
 		fileOut.Truncate(1000000000)
 	}
 	stats, _ = fileOut.Stat()
-	bytesOut, _ := syscall.Mmap(int(fileOut.Fd()), 0, int(stats.Size()), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+
+	var bytesOut []byte
+	bytesOut, _ = syscall.Mmap(int(fileOut.Fd()), 0, int(stats.Size()), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	return &DocumentBundle{sync.RWMutex{}, bytesOut, location, make(map[string]index, 0)}
 }
 
