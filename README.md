@@ -1,6 +1,4 @@
-Some document databases are ENTERPRISE GRADE HIGH PERFORMANCE NOSQL SCALABLE
-BIG DATA DATABASES.  That is not clownshoes, which is just mmap over a 
-linkedlist of byte arrays, with in-memory indexing, and no journaling.
+Some document databases are ENTERPRISE GRADE HIGH PERFORMANCE NOSQL SCALABLE BIG DATA DATABASES.  That is not clownshoes, which is just mmap over a linkedlist of byte arrays, with in-memory indexing.
 Snapshots are supported, however.
 
 An expanation of the thought process behind Clownshoes can be found at
