@@ -30,6 +30,13 @@ func TestDBCreateReadDelete(t *testing.T) {
 		t.Error("Not all documents inserted")
 	}
 
+	db.Sync()
+	if len(db.GetDocuments(func(b []byte) bool {
+		return true
+	})) != 3 {
+		t.Error("Documents not retrievable after sync")
+	}
+
 	//Remove first document
 	db.RemoveDocuments(func(payload []byte) bool {
 		return bytes.Equal(payload, doc1.Payload)
@@ -158,5 +165,4 @@ func TestDBCompaction(t *testing.T) {
 
 	t.Log("Compacting")
 	db.Compact()
-
 }
