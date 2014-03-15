@@ -22,6 +22,19 @@ type DocumentBundle struct {
 	indexes      map[string]index //For exact-match indexing
 }
 
+func (db *DocumentBundle) GetIndexNames() []string {
+	out := make([]string, 0, len(db.indexes))
+	for k, _ := range db.indexes {
+		out = append(out, k)
+	}
+	return out
+}
+
+func (db *DocumentBundle) HasIndexNamed(n string) bool {
+	_, present := db.indexes[n]
+	return present
+}
+
 //Abstracts writes to allow for transparent journaling.
 func (db *DocumentBundle) writeBytes(pos uint64, data []byte) {
 	copy(db.AsBytes[pos:], data)
@@ -78,7 +91,7 @@ func (db *DocumentBundle) CopyDB(dataDest, indexDest string) error {
 	return dataFile.Close()
 }
 
-func MSync(m *[]byte) error {
+func mSync(m *[]byte) error {
 	dh := (*reflect.SliceHeader)(unsafe.Pointer(m))
 	addr := dh.Data
 	mmap_len := uintptr(dh.Len)
@@ -93,7 +106,7 @@ func MSync(m *[]byte) error {
 func (db *DocumentBundle) Sync() error {
 	db.Lock()
 	defer db.Unlock()
-	return MSync(&db.AsBytes)
+	return mSync(&db.AsBytes)
 }
 
 // Grow or shrink the backing storage for the given db to the given size
