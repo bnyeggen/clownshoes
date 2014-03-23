@@ -189,7 +189,7 @@ func (db *DocumentBundle) Compact() {
 
 	//And re-add indexes, which blows away the old values
 	for i := 0; i < len(idxNames); i++ {
-		db.doAddIndex(idxNames[0], idxFns[0])
+		db.doAddIndex(idxNames[i], idxFns[i])
 	}
 }
 
