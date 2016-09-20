@@ -1,4 +1,4 @@
-Clownshoes is an experiment in a very simple document (which is to say "fistful of bytes") database.  Its underlying storage schema is essentially a mmap'd file containing a linked list of byte arrays.  The name is a reference to a different more prominent document database with a [similar approach](http://nyeggen.com/blog/2013/10/18/the-genius-and-folly-of-mongodb/).
+Clownshoes is an experiment in a very simple document (which is to say "fistful of bytes") database.  Its underlying storage schema is essentially a mmap'd file containing a linked list of byte arrays.  The name is a reference to a different more prominent document database with a [similar approach](http://nyeggen.com/post/2013-11-25-clownshoes-an-enterprise-grade-etc-etc-document-store/).
 
 Instead of journaling, we just maintain a shared mmap'd buffer.  If you wish to have a guaranteed durable write, you must snapshot the entire DB after the write.
 
